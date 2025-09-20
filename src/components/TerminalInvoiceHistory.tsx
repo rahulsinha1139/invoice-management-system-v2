@@ -16,6 +16,29 @@ interface Invoice {
   line_items?: any[];
 }
 
+interface InvoiceListResponse {
+  success: boolean;
+  data: Invoice[];
+  pagination?: {
+    total_pages: number;
+    current_page: number;
+    total_count: number;
+  };
+  error?: string;
+}
+
+interface InvoiceStatsResponse {
+  success: boolean;
+  data: any;
+  error?: string;
+}
+
+interface InvoiceDetailResponse {
+  success: boolean;
+  data: Invoice;
+  error?: string;
+}
+
 interface TerminalInvoiceHistoryProps {
   onNavigate: (section: string) => void;
 }
@@ -57,7 +80,7 @@ export default function TerminalInvoiceHistory({ onNavigate }: TerminalInvoiceHi
       if (filters.start_date) params.append('start_date', filters.start_date);
       if (filters.end_date) params.append('end_date', filters.end_date);
 
-      const response = await apiCall(`/api/invoices?${params.toString()}`);
+      const response = await apiCall(`/api/invoices?${params.toString()}`) as InvoiceListResponse;
 
       if (response.success) {
         setInvoices(response.data || []);
@@ -75,7 +98,7 @@ export default function TerminalInvoiceHistory({ onNavigate }: TerminalInvoiceHi
 
   const loadStats = async () => {
     try {
-      const response = await apiCall('/api/invoices/stats');
+      const response = await apiCall('/api/invoices/stats') as InvoiceStatsResponse;
       if (response.success) {
         setStats(response.data);
       }
@@ -86,7 +109,7 @@ export default function TerminalInvoiceHistory({ onNavigate }: TerminalInvoiceHi
 
   const loadInvoiceDetails = async (invoiceId: number) => {
     try {
-      const response = await apiCall(`/api/invoices/${invoiceId}`);
+      const response = await apiCall(`/api/invoices/${invoiceId}`) as InvoiceDetailResponse;
       if (response.success) {
         setSelectedInvoice(response.data);
         logBusiness('Invoice details viewed', { invoiceId, invoiceNumber: response.data.invoice_number });
@@ -102,7 +125,7 @@ export default function TerminalInvoiceHistory({ onNavigate }: TerminalInvoiceHi
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
-      });
+      }) as InvoiceDetailResponse;
 
       if (response.success) {
         // Refresh invoice list
