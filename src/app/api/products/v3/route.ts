@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Database from 'better-sqlite3';
-import path from 'path';
-
-const dbPath = path.join(process.cwd(), 'data', 'invoice.db');
+import { getDatabase } from '@/lib/database';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -14,7 +11,7 @@ export async function GET(request: NextRequest) {
   const offset = (page - 1) * limit;
 
   try {
-    const db = new Database(dbPath, { readonly: true });
+    const db = getDatabase();
 
     let query = `
       SELECT
@@ -121,8 +118,6 @@ export async function GET(request: NextRequest) {
     }
 
     const { total } = db.prepare(countQuery).get(...countParams) as { total: number };
-
-    db.close();
 
     return NextResponse.json({
       products,
