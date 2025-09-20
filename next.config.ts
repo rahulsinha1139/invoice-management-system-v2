@@ -13,10 +13,7 @@ const nextConfig: NextConfig = {
   // 🚀 EXTREME PERFORMANCE SETTINGS
   experimental: {
     optimizeCss: true,
-    optimizePackageImports: ['react', 'react-dom'],
-    turbotrace: {
-      logLevel: 'error'
-    }
+    optimizePackageImports: ['react', 'react-dom']
   },
 
   // Webpack optimizations

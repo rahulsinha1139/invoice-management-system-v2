@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '@/lib/database';
 
-interface Params {
-  params: {
-    id: string;
-  };
-}
-
 // GET /api/invoices/[id] - Get specific invoice with line items
-export async function GET(request: NextRequest, { params }: Params) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const resolvedParams = await params;
   try {
-    const invoiceId = parseInt(params.id, 10);
+    const invoiceId = parseInt(resolvedParams.id, 10);
 
     if (isNaN(invoiceId)) {
       return NextResponse.json({
@@ -42,9 +40,13 @@ export async function GET(request: NextRequest, { params }: Params) {
 }
 
 // PUT /api/invoices/[id] - Update invoice
-export async function PUT(request: NextRequest, { params }: Params) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const resolvedParams = await params;
   try {
-    const invoiceId = parseInt(params.id, 10);
+    const invoiceId = parseInt(resolvedParams.id, 10);
 
     if (isNaN(invoiceId)) {
       return NextResponse.json({
@@ -71,9 +73,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
 }
 
 // DELETE /api/invoices/[id] - Cancel/delete invoice
-export async function DELETE(request: NextRequest, { params }: Params) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const resolvedParams = await params;
   try {
-    const invoiceId = parseInt(params.id, 10);
+    const invoiceId = parseInt(resolvedParams.id, 10);
 
     if (isNaN(invoiceId)) {
       return NextResponse.json({
