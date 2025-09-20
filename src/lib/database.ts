@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import { initializeDatabase as initDB } from './databaseInit';
 
 let db: Database.Database | null = null;
 let isInitializing = false;
@@ -16,18 +17,28 @@ async function initializeDatabase(): Promise<Database.Database> {
   isInitializing = true;
   initPromise = new Promise((resolve, reject) => {
     try {
-      const dbPath = path.join(process.cwd(), 'data', 'invoice.db');
+      // Use in-memory database for production (Vercel), local file for development
+      const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+      const dbPath = isProduction ? ':memory:' : path.join(process.cwd(), 'data', 'invoice.db');
 
-      // Check if file exists
-      const fs = require('fs');
-      if (!fs.existsSync(dbPath)) {
-        throw new Error(`Database file not found at: ${dbPath}`);
+      console.log(`🔧 Initializing database: ${isProduction ? 'in-memory (production)' : 'local file (development)'}`);
+
+      if (!isProduction) {
+        // Check if file exists in development
+        const fs = require('fs');
+        if (!fs.existsSync(dbPath)) {
+          throw new Error(`Database file not found at: ${dbPath}`);
+        }
+        db = new Database(dbPath, {
+          fileMustExist: true,
+          timeout: 5000
+        });
+      } else {
+        // Create in-memory database for production
+        db = new Database(':memory:');
+        // Initialize tables and default data
+        initDB(db);
       }
-
-      db = new Database(dbPath, {
-        fileMustExist: true,
-        timeout: 5000
-      });
 
       // Lightning-fast optimizations
       db.pragma('foreign_keys = ON');
@@ -58,14 +69,24 @@ async function initializeDatabase(): Promise<Database.Database> {
 export function getDatabase(): Database.Database {
   if (!db) {
     // Synchronous fallback for immediate usage
-    const dbPath = path.join(process.cwd(), 'data', 'invoice.db');
-    const fs = require('fs');
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
 
-    if (!fs.existsSync(dbPath)) {
-      throw new Error(`Database file not found at: ${dbPath}`);
+    if (!isProduction) {
+      const dbPath = path.join(process.cwd(), 'data', 'invoice.db');
+      const fs = require('fs');
+
+      if (!fs.existsSync(dbPath)) {
+        throw new Error(`Database file not found at: ${dbPath}`);
+      }
+
+      db = new Database(dbPath, { fileMustExist: true });
+    } else {
+      // Create in-memory database for production
+      db = new Database(':memory:');
+      // Initialize tables and default data
+      initDB(db);
+      console.log('✅ Production database initialized');
     }
-
-    db = new Database(dbPath, { fileMustExist: true });
 
     // Quick optimizations
     db.pragma('journal_mode = WAL');
