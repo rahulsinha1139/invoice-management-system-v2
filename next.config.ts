@@ -12,7 +12,6 @@ const nextConfig: NextConfig = {
 
   // 🚀 EXTREME PERFORMANCE SETTINGS
   experimental: {
-    optimizeCss: true,
     optimizePackageImports: ['react', 'react-dom']
   },
 

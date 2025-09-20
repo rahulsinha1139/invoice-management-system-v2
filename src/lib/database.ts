@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { initializeDatabase as initDB } from './databaseInit';
+import { initializeProductionDatabase } from './databaseInitEnhanced';
 
 let db: Database.Database | null = null;
 let isInitializing = false;
@@ -36,8 +37,8 @@ async function initializeDatabase(): Promise<Database.Database> {
       } else {
         // Create in-memory database for production
         db = new Database(':memory:');
-        // Initialize tables and default data
-        initDB(db);
+        // Initialize tables and seed with complete production data
+        initializeProductionDatabase(db);
       }
 
       // Lightning-fast optimizations
@@ -83,8 +84,8 @@ export function getDatabase(): Database.Database {
     } else {
       // Create in-memory database for production
       db = new Database(':memory:');
-      // Initialize tables and default data
-      initDB(db);
+      // Initialize tables and seed with complete production data
+      initializeProductionDatabase(db);
       console.log('✅ Production database initialized');
     }
 
