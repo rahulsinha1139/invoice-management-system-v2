@@ -321,7 +321,7 @@ export default function TerminalInvoice({ onNavigate }: TerminalInvoiceProps) {
 
   const executeCommand = (command: string) => {
     // Instant feedback based on command type
-    const buttonMap = {
+    const buttonMap: Record<string, string> = {
       'SAVE_INVOICE': 'save-invoice-btn',
       'GENERATE_PDF': 'generate-pdf-btn',
       'EXPORT_EXCEL': 'export-excel-btn'
