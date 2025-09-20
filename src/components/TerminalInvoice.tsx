@@ -9,6 +9,13 @@ import { UEC_COMPANY_CONFIG, generateInvoiceNumber } from '../lib/companyConfig'
 import { apiCall, postJSON } from '../lib/fetchUtils';
 import { useLightningButton, LightningButtonManager } from '../lib/lightningButtons';
 
+interface ApiResponse<T = any> {
+  success: boolean;
+  data: T;
+  error?: string;
+  message?: string;
+}
+
 interface Customer {
   id: number;
   name: string;
@@ -481,7 +488,7 @@ export default function TerminalInvoice({ onNavigate }: TerminalInvoiceProps) {
       };
 
       // Call API to save invoice
-      const response = await postJSON('/api/invoices', invoiceData) as any;
+      const response = await postJSON('/api/invoices', invoiceData) as ApiResponse;
 
       if (response.success) {
         logBusiness('Invoice saved to database', {
