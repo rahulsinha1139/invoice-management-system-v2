@@ -2,12 +2,21 @@ import Database from 'better-sqlite3';
 import path from 'path';
 
 let db: Database.Database | null = null;
+let isInitializing = false;
+let initPromise: Promise<Database.Database> | null = null;
 
-export function getDatabase(): Database.Database {
-  if (!db) {
+// Initialize database once at startup
+async function initializeDatabase(): Promise<Database.Database> {
+  if (db) return db;
+
+  if (isInitializing && initPromise) {
+    return initPromise;
+  }
+
+  isInitializing = true;
+  initPromise = new Promise((resolve, reject) => {
     try {
       const dbPath = path.join(process.cwd(), 'data', 'invoice.db');
-      console.log('Attempting to connect to database at:', dbPath);
 
       // Check if file exists
       const fs = require('fs');
@@ -15,23 +24,59 @@ export function getDatabase(): Database.Database {
         throw new Error(`Database file not found at: ${dbPath}`);
       }
 
-      db = new Database(dbPath);
-      console.log('Database connection established');
+      db = new Database(dbPath, {
+        fileMustExist: true,
+        timeout: 5000
+      });
 
-      // Enable foreign keys
+      // Lightning-fast optimizations
       db.pragma('foreign_keys = ON');
-
-      // WAL mode for better performance
       db.pragma('journal_mode = WAL');
+      db.pragma('synchronous = NORMAL');
+      db.pragma('cache_size = -128000');  // 128MB cache (doubled)
+      db.pragma('temp_store = MEMORY');
+      db.pragma('mmap_size = 268435456'); // 256MB memory map
+      db.pragma('page_size = 4096');      // Optimal page size
 
-      console.log('Database pragmas set successfully');
+      // Prepare frequently used statements
+      db.prepare('SELECT 1').get(); // Warmup query
+
+      console.log('⚡ Database connection optimized and ready');
+      isInitializing = false;
+      resolve(db);
     } catch (error) {
+      isInitializing = false;
+      initPromise = null;
       console.error('Database connection error:', error);
-      throw error;
+      reject(error);
     }
+  });
+
+  return initPromise;
+}
+
+export function getDatabase(): Database.Database {
+  if (!db) {
+    // Synchronous fallback for immediate usage
+    const dbPath = path.join(process.cwd(), 'data', 'invoice.db');
+    const fs = require('fs');
+
+    if (!fs.existsSync(dbPath)) {
+      throw new Error(`Database file not found at: ${dbPath}`);
+    }
+
+    db = new Database(dbPath, { fileMustExist: true });
+
+    // Quick optimizations
+    db.pragma('journal_mode = WAL');
+    db.pragma('cache_size = -64000');
+    db.pragma('temp_store = MEMORY');
   }
   return db;
 }
+
+// Export async version for better performance
+export const getDatabaseAsync = initializeDatabase;
 
 export function closeDatabase() {
   if (db) {
@@ -105,6 +150,79 @@ export interface Customer {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface Invoice {
+  id: number;
+  invoice_number: string;
+  invoice_date: string;
+  due_date?: string;
+  company_id: number;
+  customer_id: number;
+  billing_address_snapshot: string;
+  shipping_address_snapshot?: string;
+  place_of_supply: string;
+  state_code: string;
+  is_interstate: boolean;
+  payment_method: 'NEFT_RTGS' | 'CHEQUE';
+  payment_terms?: string;
+  currency: string;
+  subtotal: number;
+  discount_total: number;
+  taxable_value: number;
+  cgst_total: number;
+  sgst_total: number;
+  igst_total: number;
+  cess_total: number;
+  other_charges: number;
+  rounding_adjustment: number;
+  grand_total: number;
+  total_in_words?: string;
+  notes?: string;
+  terms_and_conditions?: string;
+  delivery_instructions?: string;
+  status: 'DRAFT' | 'ISSUED' | 'PAID' | 'CANCELLED';
+  printed_count: number;
+  emailed_count: number;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  issued_at?: string;
+  // Joined fields
+  customer_name?: string;
+  customer_gstin?: string;
+  line_items?: InvoiceLine[];
+}
+
+export interface InvoiceLine {
+  id: number;
+  invoice_id: number;
+  line_number: number;
+  product_id: number;
+  product_variant_id: number;
+  product_name_snapshot: string;
+  description_snapshot?: string;
+  hsn_code_snapshot: string;
+  uom_snapshot: string;
+  pack_size_value_snapshot?: number;
+  pack_size_uom_snapshot?: string;
+  quantity: number;
+  unit_price: number;
+  discount_pct: number;
+  discount_amount: number;
+  line_subtotal: number;
+  cgst_pct: number;
+  sgst_pct: number;
+  igst_pct: number;
+  cess_pct: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  cess_amount: number;
+  line_total: number;
+  remarks?: string;
+  delivery_date?: string;
+  created_at: string;
 }
 
 // Database service functions
@@ -271,5 +389,304 @@ export class DatabaseService {
 
     // Return the created customer
     return this.getCustomer(result.lastInsertRowid as number) as Customer;
+  }
+
+  // ====================================================================
+  // INVOICE MANAGEMENT METHODS
+  // ====================================================================
+
+  static getInvoices(options: {
+    page?: number;
+    limit?: number;
+    filters?: {
+      status?: string;
+      customer_id?: number;
+      start_date?: string;
+      end_date?: string;
+    };
+  }) {
+    const db = getDatabase();
+    const { page = 1, limit = 10, filters = {} } = options;
+    const offset = (page - 1) * limit;
+
+    let whereClause = '1 = 1';
+    const params: any[] = [];
+
+    if (filters.status) {
+      whereClause += ' AND i.status = ?';
+      params.push(filters.status);
+    }
+
+    if (filters.customer_id) {
+      whereClause += ' AND i.customer_id = ?';
+      params.push(filters.customer_id);
+    }
+
+    if (filters.start_date) {
+      whereClause += ' AND i.invoice_date >= ?';
+      params.push(filters.start_date);
+    }
+
+    if (filters.end_date) {
+      whereClause += ' AND i.invoice_date <= ?';
+      params.push(filters.end_date);
+    }
+
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as count
+      FROM invoices i
+      WHERE ${whereClause}
+    `;
+    const totalCount = (db.prepare(countQuery).get(...params) as { count: number }).count;
+
+    // Get invoices with customer info
+    const invoicesQuery = `
+      SELECT
+        i.*,
+        c.name as customer_name,
+        c.gstin as customer_gstin
+      FROM invoices i
+      LEFT JOIN customers c ON i.customer_id = c.id
+      WHERE ${whereClause}
+      ORDER BY i.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const invoices = db.prepare(invoicesQuery).all(...params, limit, offset) as Invoice[];
+
+    return {
+      invoices,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+    };
+  }
+
+  static getInvoiceById(invoiceId: number): Invoice | null {
+    const db = getDatabase();
+
+    // Get invoice with customer info
+    const invoiceQuery = `
+      SELECT
+        i.*,
+        c.name as customer_name,
+        c.gstin as customer_gstin
+      FROM invoices i
+      LEFT JOIN customers c ON i.customer_id = c.id
+      WHERE i.id = ?
+    `;
+
+    const invoice = db.prepare(invoiceQuery).get(invoiceId) as Invoice | null;
+
+    if (!invoice) return null;
+
+    // Get line items
+    const lineItemsQuery = `
+      SELECT * FROM invoice_lines
+      WHERE invoice_id = ?
+      ORDER BY line_number
+    `;
+
+    const lineItems = db.prepare(lineItemsQuery).all(invoiceId) as InvoiceLine[];
+    invoice.line_items = lineItems;
+
+    return invoice;
+  }
+
+  static createInvoice(invoiceData: any): Invoice {
+    const db = getDatabase();
+
+    try {
+      // Start transaction
+      const transaction = db.transaction(() => {
+        // Get next invoice number
+        const nextNumber = this.getNextInvoiceNumber();
+
+        // Get customer details for address snapshot
+        const customer = this.getCustomer(invoiceData.customer_id);
+        if (!customer) {
+          throw new Error('Customer not found');
+        }
+
+        // Create billing address snapshot
+        const billingAddress = `${customer.name}\n${customer.address_line_1}${customer.address_line_2 ? '\n' + customer.address_line_2 : ''}\n${customer.city}, ${customer.state} - ${customer.pin_code}${customer.gstin ? '\nGSTIN: ' + customer.gstin : ''}`;
+
+        // Insert invoice header
+        const insertInvoice = db.prepare(`
+          INSERT INTO invoices (
+            invoice_number, invoice_date, due_date, company_id, customer_id,
+            billing_address_snapshot, shipping_address_snapshot,
+            place_of_supply, state_code, is_interstate,
+            payment_method, payment_terms, currency,
+            subtotal, discount_total, taxable_value,
+            cgst_total, sgst_total, igst_total, cess_total,
+            other_charges, rounding_adjustment, grand_total, total_in_words,
+            notes, terms_and_conditions, delivery_instructions,
+            status, created_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const invoiceResult = insertInvoice.run(
+          nextNumber,
+          invoiceData.invoice_date || new Date().toISOString().split('T')[0],
+          invoiceData.due_date || null,
+          1, // Default company ID
+          invoiceData.customer_id,
+          billingAddress,
+          invoiceData.shipping_address_snapshot || billingAddress,
+          invoiceData.place_of_supply || customer.state,
+          invoiceData.state_code || '23', // Default to MP
+          invoiceData.is_interstate ? 1 : 0, // Convert boolean to integer
+          invoiceData.payment_method || 'NEFT_RTGS',
+          invoiceData.payment_terms || 'Immediate',
+          'INR',
+          invoiceData.subtotal || 0,
+          invoiceData.discount_total || 0,
+          invoiceData.taxable_value || 0,
+          invoiceData.cgst_total || 0,
+          invoiceData.sgst_total || 0,
+          invoiceData.igst_total || 0,
+          invoiceData.cess_total || 0,
+          invoiceData.other_charges || 0,
+          invoiceData.rounding_adjustment || 0,
+          invoiceData.grand_total || 0,
+          invoiceData.total_in_words || null,
+          invoiceData.notes || null,
+          invoiceData.terms_and_conditions || null,
+          invoiceData.delivery_instructions || null,
+          invoiceData.status || 'DRAFT',
+          invoiceData.created_by || 'system'
+        );
+
+        const invoiceId = invoiceResult.lastInsertRowid as number;
+
+        // Insert line items
+        if (invoiceData.line_items && Array.isArray(invoiceData.line_items)) {
+          const insertLineItem = db.prepare(`
+            INSERT INTO invoice_lines (
+              invoice_id, line_number, product_id, product_variant_id,
+              product_name_snapshot, description_snapshot, hsn_code_snapshot,
+              uom_snapshot, pack_size_value_snapshot, pack_size_uom_snapshot,
+              quantity, unit_price, discount_pct, discount_amount, line_subtotal,
+              cgst_pct, sgst_pct, igst_pct, cess_pct,
+              cgst_amount, sgst_amount, igst_amount, cess_amount,
+              line_total, remarks, delivery_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
+          invoiceData.line_items.forEach((item: any, index: number) => {
+            insertLineItem.run(
+              invoiceId,
+              index + 1,
+              item.product_id,
+              item.product_variant_id || item.product_id,
+              item.product_name_snapshot || item.product_name,
+              item.description_snapshot || item.description || null,
+              item.hsn_code_snapshot || item.hsn_code,
+              item.uom_snapshot || item.uom || 'KG',
+              item.pack_size_value_snapshot || item.pack_size_value || null,
+              item.pack_size_uom_snapshot || item.pack_size_uom || null,
+              item.quantity,
+              item.unit_price,
+              item.discount_pct || 0,
+              item.discount_amount || 0,
+              item.line_subtotal || (item.quantity * item.unit_price),
+              item.cgst_pct || 9,
+              item.sgst_pct || 9,
+              item.igst_pct || 0,
+              item.cess_pct || 0,
+              item.cgst_amount || 0,
+              item.sgst_amount || 0,
+              item.igst_amount || 0,
+              item.cess_amount || 0,
+              item.line_total || (item.quantity * item.unit_price * 1.18),
+              item.remarks || null,
+              item.delivery_date || null
+            );
+          });
+        }
+
+        return invoiceId;
+      });
+
+      const invoiceId = transaction();
+      return this.getInvoiceById(invoiceId) as Invoice;
+    } catch (error) {
+      console.error('Error creating invoice:', error);
+      throw error;
+    }
+  }
+
+  static updateInvoice(invoiceId: number, updateData: any): Invoice {
+    const db = getDatabase();
+
+    const updateFields: string[] = [];
+    const params: any[] = [];
+
+    // Build dynamic update query
+    const allowedFields = [
+      'invoice_date', 'due_date', 'payment_method', 'payment_terms',
+      'notes', 'terms_and_conditions', 'delivery_instructions', 'status'
+    ];
+
+    allowedFields.forEach(field => {
+      if (updateData[field] !== undefined) {
+        updateFields.push(`${field} = ?`);
+        params.push(updateData[field]);
+      }
+    });
+
+    if (updateFields.length === 0) {
+      throw new Error('No valid fields to update');
+    }
+
+    params.push(invoiceId);
+
+    const updateQuery = `
+      UPDATE invoices
+      SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `;
+
+    const result = db.prepare(updateQuery).run(...params);
+
+    if (result.changes === 0) {
+      throw new Error('Invoice not found or no changes made');
+    }
+
+    return this.getInvoiceById(invoiceId) as Invoice;
+  }
+
+  static cancelInvoice(invoiceId: number): void {
+    const db = getDatabase();
+
+    const result = db.prepare(`
+      UPDATE invoices
+      SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND status != 'CANCELLED'
+    `).run(invoiceId);
+
+    if (result.changes === 0) {
+      throw new Error('Invoice not found or already cancelled');
+    }
+  }
+
+  static getInvoiceStats() {
+    const db = getDatabase();
+
+    const stats = db.prepare(`
+      SELECT
+        COUNT(*) as total_invoices,
+        COUNT(CASE WHEN status = 'DRAFT' THEN 1 END) as draft_count,
+        COUNT(CASE WHEN status = 'ISSUED' THEN 1 END) as issued_count,
+        COUNT(CASE WHEN status = 'PAID' THEN 1 END) as paid_count,
+        COUNT(CASE WHEN status = 'CANCELLED' THEN 1 END) as cancelled_count,
+        COALESCE(SUM(CASE WHEN status != 'CANCELLED' THEN grand_total ELSE 0 END), 0) as total_value,
+        COALESCE(SUM(CASE WHEN status = 'PAID' THEN grand_total ELSE 0 END), 0) as paid_value,
+        COALESCE(SUM(CASE WHEN status = 'ISSUED' THEN grand_total ELSE 0 END), 0) as outstanding_value
+      FROM invoices
+    `).get();
+
+    return stats;
   }
 }

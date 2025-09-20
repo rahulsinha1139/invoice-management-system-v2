@@ -191,8 +191,17 @@ export interface Invoice {
   place_of_supply: string;
   state_code: string;
   is_interstate: boolean;
-  payment_method: 'NEFT_RTGS' | 'CHEQUE';
+  payment_method: 'NEFT_RTGS' | 'CHEQUE' | 'CASH' | 'UPI';
   payment_terms?: string;
+
+  // Enhanced Flask features - Purchase Order Support
+  po_number?: string;
+  po_date?: string;
+
+  // Transport & Dispatch Details
+  transport?: string;
+  dispatch_from?: string;
+  dispatch_to?: string;
   currency: string;
   subtotal: number;
   discount_total: number;
@@ -203,12 +212,13 @@ export interface Invoice {
   cess_total: number;
   other_charges: number;
   rounding_adjustment: number;
+  rounded_off?: number; // Enhanced Flask feature - Rounded-off amount
   grand_total: number;
   total_in_words?: string;
   notes?: string;
   terms_and_conditions?: string;
   delivery_instructions?: string;
-  status: 'DRAFT' | 'ISSUED' | 'PAID' | 'CANCELLED';
+  status: 'DRAFT' | 'SENT' | 'ISSUED' | 'PAID' | 'CANCELLED';
   printed_count: number;
   emailed_count: number;
   created_by?: string;
@@ -320,8 +330,15 @@ export interface InvoiceCreateRequest {
   customer_id: number;
   invoice_date: string;
   due_date?: string;
-  payment_method: 'NEFT_RTGS' | 'CHEQUE';
+  payment_method: 'NEFT_RTGS' | 'CHEQUE' | 'CASH' | 'UPI';
   payment_terms?: string;
+
+  // Enhanced Flask features
+  po_number?: string;
+  po_date?: string;
+  transport?: string;
+  dispatch_from?: string;
+  dispatch_to?: string;
   lines: InvoiceLineRequest[];
   notes?: string;
   terms_and_conditions?: string;
@@ -330,7 +347,7 @@ export interface InvoiceCreateRequest {
 
 export interface InvoiceUpdateRequest extends Partial<InvoiceCreateRequest> {
   id: number;
-  status?: 'DRAFT' | 'ISSUED' | 'PAID' | 'CANCELLED';
+  status?: 'DRAFT' | 'SENT' | 'ISSUED' | 'PAID' | 'CANCELLED';
 }
 
 // ====================================================================
