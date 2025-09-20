@@ -481,7 +481,7 @@ export default function TerminalInvoice({ onNavigate }: TerminalInvoiceProps) {
       };
 
       // Call API to save invoice
-      const response = await postJSON('/api/invoices', invoiceData);
+      const response = await postJSON('/api/invoices', invoiceData) as any;
 
       if (response.success) {
         logBusiness('Invoice saved to database', {
