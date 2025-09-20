@@ -144,6 +144,7 @@ export interface ProductVariant {
   diameter_mm?: number;
   pack_size_value?: number;
   pack_size_uom_id?: number;
+  pack_size_unit?: string;
   selling_uom_id?: number;
   is_active: boolean;
   created_at: string;

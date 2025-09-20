@@ -45,6 +45,7 @@ interface ProductVariant {
   product_name: string;
   pack_size_value: number;
   pack_size_uom_code: string;
+  pack_size_unit?: string;
   selling_uom_code: string;
   hsn_code: string;
 }
